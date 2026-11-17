@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel Console</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root{
+    --bg:#0e0e0e; --navbar:#181a1f; --card:#1a1c22;
+    --card2:#1e2027; --border:#2a2d35; --text:#d7d9df; --muted:#7c7f8a;
+    --accent:#4d7cff; --accent-hover:#3f68d9; --green:#3ddc84; --red:#ff5c5c; --yellow:#f0b429;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Inter','Segoe UI',Tahoma,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;font-size:14px;overflow-x: hidden;}
+  
+  .topbar{background:var(--navbar);border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;flex-shrink:0; position:sticky; top:0; z-index:100;}
+  .server-name{font-weight:600;color:#fff;font-size:15px;display:flex;align-items:center;gap:8px;}
+  .server-name .dot{width:9px;height:9px;border-radius:50%;background:var(--green);}
+  
+  .tabs{display:flex;background:var(--navbar);border-bottom:1px solid var(--border);padding:0 15px;gap:20px;flex-shrink:0; position:sticky; top:56px; z-index:99;}
+  .tab{padding:12px 0;color:var(--muted);cursor:pointer;font-size:13.5px;font-weight:500;border-bottom:2px solid transparent;transition:0.2s;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:#fff;border-bottom-color:var(--accent);}
+  
+  .content{flex:1;padding:15px;display:none;flex-direction:column; min-height: calc(100vh - 110px);}
+  .content.active{display:flex;}
+  
+  .power-bar{display:flex;align-items:center;justify-content:space-between;background:var(--card);padding:12px 15px;border-radius:8px;margin-bottom:15px;flex-wrap:wrap;gap:10px;border:1px solid var(--border);}
+  .power-info{display:flex;gap:20px;font-size:13px;color:var(--muted);}
+  .power-info span b{color:#fff;}
+  .power-buttons{display:flex;gap:8px;width:100%;}
+  .pbtn{border:none;border-radius:6px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;gap:5px;flex:1;transition:.15s;}
+  .pbtn.start{background:var(--accent);color:#fff;}
+  .pbtn.restart{background:#3a3d45;color:#fff;}
+  .pbtn.stop{background:var(--red);color:#fff;}
+  .pbtn:hover{filter:brightness(1.1);}
+  .pbtn:disabled{opacity:0.5;cursor:not-allowed;filter:none;}
+
+  .console-wrapper{flex:1;display:flex;flex-direction:column;background:#0b0c0f;border:1px solid var(--border);border-radius:8px;overflow:hidden; min-height: 400px;}
+  .console-output{flex:1;padding:15px;overflow-y:auto;font-family:'JetBrains Mono','Courier New',monospace;font-size:13px;line-height:1.6;color:#c9d1d9; max-height: 60vh;}
+  .console-input{display:flex;border-top:1px solid var(--border);background:#0e0f12;}
+  .console-input input{flex:1;background:transparent;border:none;outline:none;color:#fff;padding:12px 15px;font-family:'JetBrains Mono',monospace;font-size:13px;}
+  .console-input button{background:var(--accent);border:none;color:#fff;padding:0 20px;cursor:pointer;font-weight:600;}
+  .console-input button:hover{background:var(--accent-hover);}
+  
+  .log-info{color:#7fb3ff;} .log-done{color:var(--green);} .log-warn{color:var(--yellow);} .log-err{color:var(--red);}
+  .log-sys{color:#a0a0a0;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:15px;}
+  .btn-group{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;}
+  .btn{background:var(--accent);border:none;color:#fff;padding:12px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;transition:0.2s;flex:1;}
+  .btn:hover{background:var(--accent-hover);}
+  .btn.outline{background:#2a2d35;border:1px solid #3a3d45;color:var(--text);}
+  .btn.outline:hover{background:#353840;}
+
+  .breadcrumb{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-bottom:15px;display:flex;gap:5px;align-items:center;flex-wrap:wrap; padding-bottom:10px; border-bottom:1px solid var(--border);}
+  .breadcrumb span{cursor:pointer;transition:0.2s;}
+  .breadcrumb span:hover{color:#fff;}
+  
+  .file-list{display:flex; flex-direction:column; width:100%;}
+  .file-item{display:flex; align-items:center; justify-content:space-between; padding:12px 10px; border-bottom:1px solid #20232a; transition:0.2s; cursor:pointer;}
+  .file-item:hover{background:var(--card2);}
+  .file-item.selected{background:rgba(77,124,255,0.1); border-left:3px solid var(--accent);}
+  .file-info{display:flex; align-items:center; gap:12px; flex:1; overflow:hidden;}
+  .file-icon{font-size:18px; width:24px; text-align:center; flex-shrink:0;}
+  .file-icon.folder-icon{color:var(--yellow);}
+  .file-icon.file-icon{color:var(--muted);}
+  .file-name{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px;}
+  .file-meta{font-size:11px; color:var(--muted); margin-top:3px;}
+  .file-action{flex-shrink:0; margin-left:10px;}
+  
+  .dropdown{position:relative;display:inline-block;}
+  .dropdown-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:8px 10px;border-radius:4px;font-size:16px;}
+  .dropdown-btn:hover{background:var(--border);color:#fff;}
+  .dropdown-content{display:none;position:absolute;right:0; top:100%; background:var(--card2);min-width:160px;box-shadow:0 8px 16px rgba(0,0,0,0.5);z-index:100;border-radius:6px;border:1px solid var(--border);overflow:hidden;}
+  .dropdown-content a{color:var(--text);padding:10px 14px;text-decoration:none;display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;}
+  .dropdown-content a:hover{background:var(--accent);color:#fff;}
+  .dropdown-content a.danger{color:var(--red);}
+  .dropdown-content a.danger:hover{background:var(--red);color:#fff;}
+  .dropdown.show .dropdown-content{display:block;}
+
+  .editor-overlay,.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:999;align-items:center;justify-content:center;padding:15px;}
+  .editor-box{background:var(--card);width:100%;max-width:900px;height:85vh;border-radius:8px;display:flex;flex-direction:column;border:1px solid var(--border);}
+  .editor-header{display:flex;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--border);background:var(--card2);}
+  .editor-textarea{flex:1;background:#0b0c0f;color:#c9d1d9;border:none;resize:none;padding:15px;font-family:'JetBrains Mono',monospace;font-size:13px;outline:none;}
+  
+  .modal-box{background:var(--card);padding:20px;border-radius:8px;border:1px solid var(--border);width:100%;max-width:400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);}
+  .modal-box h3{margin-bottom:15px;color:#fff;font-size:16px;}
+  .modal-box input{width:100%;background:#0e0f12;border:1px solid var(--border);border-radius:6px;padding:10px;color:#fff;margin-bottom:15px;outline:none;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+
+  .custom-popup-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:3000;align-items:center;justify-content:center;padding:20px; backdrop-filter: blur(2px);}
+  .custom-popup{background:var(--card);width:100%;max-width:350px;border-radius:10px;border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,0.8);overflow:hidden; transform: scale(0.95); transition: transform 0.2s;}
+  .custom-popup.show{ transform: scale(1); }
+  .popup-header{padding:15px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+  .popup-header i{font-size:18px;}
+  .popup-header h4{color:#fff;font-size:15px;font-weight:600;margin:0;}
+  .popup-body{padding:20px;color:var(--muted);font-size:13.5px;line-height:1.5;}
+  .popup-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;background:var(--card2);}
+  .popup-btn{border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:0.2s;}
+  .popup-btn.cancel{background:transparent;color:var(--muted);border:1px solid var(--border);}
+  .popup-btn.cancel:hover{background:var(--border);color:#fff;}
+  .popup-btn.confirm{background:var(--accent);color:#fff;}
+  .popup-btn.confirm:hover{background:var(--accent-hover);}
+  .popup-btn.danger{background:var(--red);color:#fff;}
+  .popup-btn.danger:hover{background:#e04b4b;}
+
+  #loginOverlay{position:fixed;inset:0;background:#0e0e0e;display:flex;align-items:center;justify-content:center;z-index:2000;}
+  .login-box{width:100%;max-width:340px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:25px;}
+  .login-box h2{text-align:center;margin-bottom:20px;color:#fff;font-size:18px;}
+  .login-box input{width:100%;background:#0e0f12;border:1px solid var(--border);border-radius:6px;padding:12px;color:#fff;margin-bottom:15px;outline:none;font-size:14px;}
+  .login-box button{width:100%;background:var(--accent);border:none;color:#fff;padding:12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px;}
+  #app{display:none;flex-direction:column; min-height:100vh;}
+</style>
+</head>
+<body>
+
+<div id="loginOverlay">
+  <div class="login-box">
+    <h2>Panel Login</h2>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="doLogin()">Login</button>
+    <div id="loginErr" style="color:var(--red);text-align:center;margin-top:10px;font-size:12px;"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="server-name"><span class="dot"></span> Server Name</div>
+    <button class="btn outline" onclick="doLogout()" style="flex:none;padding:6px 12px; font-size:12px;"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('console')">Console</div>
+    <div class="tab" onclick="switchTab('files')">Files</div>
+  </div>
+
+  <!-- TAB CONSOLE -->
+  <div class="content active" id="content-console">
+    <div class="power-bar">
+      <div class="power-info">
+        <span>Status: <b id="scStatus" style="color:var(--red)">Offline</b></span>
+        <span>SC: <b id="scName" style="color:#fff">Belum dipilih</b></span>
+      </div>
+      <div class="power-buttons">
+        <button class="pbtn start" id="btnStart" onclick="startActiveSC()"><i class="fa-solid fa-play"></i> Start</button>
+        <button class="pbtn restart" id="btnRestart" onclick="restartSC()" disabled><i class="fa-solid fa-rotate-right"></i> Restart</button>
+        <button class="pbtn stop" id="btnStop" onclick="stopSC()" disabled><i class="fa-solid fa-stop"></i> Stop</button>
+      </div>
+    </div>
+
+    <div class="console-wrapper">
+      <div class="console-output" id="consoleBox"></div>
+      <div class="console-input">
+        <input type="text" id="cmdInput" placeholder="Type a command..." onkeydown="if(event.key==='Enter')sendCmd()">
+        <button onclick="sendCmd()"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB FILES -->
+  <div class="content" id="content-files">
+    <div class="card">
+      <div class="btn-group">
+        <button class="btn outline" onclick="openModal('create-folder')"><i class="fa-solid fa-folder-plus"></i> Create Directory</button>
+      </div>
+      <div class="btn-group">
+        <input type="file" id="fileUploader" style="display:none" onchange="uploadFile()">
+        <button class="btn" onclick="document.getElementById('fileUploader').click()">Upload</button>
+        <button class="btn" onclick="openModal('create-file')">New File</button>
+      </div>
+      <div class="breadcrumb" id="breadcrumb"></div>
+      
+      <div class="file-list" id="fileListContainer"></div>
+
+    </div>
+  </div>
+</div>
+
+<div class="editor-overlay" id="editorOverlay">
+  <div class="editor-box">
+    <div class="editor-header">
+      <span id="editorFilename" style="font-weight:600;color:#fff;font-size:13px;">filename.js</span>
+      <div>
+        <button class="btn" onclick="saveFile()" style="flex:none;padding:6px 12px; font-size:12px; min-width:auto;"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        <button class="btn outline" onclick="closeEditor()" style="flex:none;padding:6px 12px; font-size:12px; min-width:auto;"><i class="fa-solid fa-xmark"></i> Close</button>
+      </div>
+    </div>
+    <textarea class="editor-textarea" id="fileEditor" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <h3 id="modalTitle">Rename</h3>
+    <input type="text" id="modalInput" placeholder="Enter name...">
+    <div class="modal-actions">
+      <button class="btn outline" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="submitModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="custom-popup-overlay" id="customPopupOverlay">
+  <div class="custom-popup" id="customPopup">
+    <div class="popup-header" id="popupHeader">
+      <i class="fa-solid fa-info-circle" id="popupIcon" style="color:var(--accent)"></i>
+      <h4 id="popupTitle">Informasi</h4>
+    </div>
+    <div class="popup-body" id="popupMessage">
+      Pesan...
+    </div>
+    <div class="popup-footer" id="popupFooter">
+      <button class="popup-btn confirm" id="popupConfirmBtn" onclick="closeCustomPopup()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = 'http://web.antirusuhvvip.web.id:2009';
+let currentUser = '', currentPath = '', currentAction = null, selectedFile = '';
+let socket = null;
+let activeFolderSC = ''; // <-- Nyimpen folder yang lagi aktif
+
+/* ================= CUSTOM POPUP LOGIC ================= */
+function showAlert(message, title = 'Informasi', isError = false) {
+  const overlay = document.getElementById('customPopupOverlay');
+  const popup = document.getElementById('customPopup');
+  const icon = document.getElementById('popupIcon');
+  const titleEl = document.getElementById('popupTitle');
+  const msgEl = document.getElementById('popupMessage');
+  const footer = document.getElementById('popupFooter');
+
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  
+  if (isError) { icon.className = 'fa-solid fa-circle-exclamation'; icon.style.color = 'var(--red)'; }
+  else { icon.className = 'fa-solid fa-info-circle'; icon.style.color = 'var(--accent)'; }
+
+  footer.innerHTML = `<button class="popup-btn confirm" onclick="closeCustomPopup()">OK</button>`;
+  overlay.style.display = 'flex';
+  setTimeout(() => popup.classList.add('show'), 10);
+}
+
+function showConfirm(message, onConfirm, title = 'Konfirmasi', isDanger = false) {
+  const overlay = document.getElementById('customPopupOverlay');
+  const popup = document.getElementById('customPopup');
+  const icon = document.getElementById('popupIcon');
+  const titleEl = document.getElementById('popupTitle');
+  const msgEl = document.getElementById('popupMessage');
+  const footer = document.getElementById('popupFooter');
+
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  
+  if (isDanger) { icon.className = 'fa-solid fa-triangle-exclamation'; icon.style.color = 'var(--yellow)'; }
+  else { icon.className = 'fa-solid fa-question-circle'; icon.style.color = 'var(--accent)'; }
+
+  footer.innerHTML = `
+    <button class="popup-btn cancel" onclick="closeCustomPopup()">Batal</button>
+    <button class="popup-btn ${isDanger ? 'danger' : 'confirm'}" id="btnConfirmPopup">Ya, Lanjutkan</button>
+  `;
+  
+  document.getElementById('btnConfirmPopup').onclick = () => { closeCustomPopup(); onConfirm(); };
+  overlay.style.display = 'flex';
+  setTimeout(() => popup.classList.add('show'), 10);
+}
+
+function closeCustomPopup() {
+  const popup = document.getElementById('customPopup');
+  popup.classList.remove('show');
+  setTimeout(() => { document.getElementById('customPopupOverlay').style.display = 'none'; }, 200);
+}
+
+/* ================= LOGIN & STORAGE ================= */
+async function doLogin(){
+  const u = document.getElementById('username').value.trim();
+  const p = document.getElementById('password').value.trim();
+  if(!u || !p) return;
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/login`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const data = await res.json();
+    if (data.success) {
+      localStorage.setItem('panel_user', u);
+      localStorage.setItem('panel_pass', p);
+      currentUser = data.userId; 
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      
+      fetchServerLogs();
+      initWebSocket();
+      loadFiles();
+    } else {
+      document.getElementById('loginErr').textContent = data.message;
+    }
+  } catch(e) { document.getElementById('loginErr').textContent = 'Gagal konek.'; }
+}
+
+function doLogout(){ 
+  localStorage.removeItem('panel_user');
+  localStorage.removeItem('panel_pass');
+  location.reload(); 
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const savedUser = localStorage.getItem('panel_user');
+  const savedPass = localStorage.getItem('panel_pass');
+  if(savedUser && savedPass) {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('username').value = savedUser;
+    document.getElementById('password').value = savedPass;
+    await doLogin();
+  }
+});
+
+/* ================= FETCH AWAL LOG ================= */
+async function fetchServerLogs() {
+  try {
+    const res = await fetch(`${API_BASE}/api/server-logs`);
+    const data = await res.json();
+    if (data.success && data.logs) {
+      const box = document.getElementById('consoleBox');
+      box.innerHTML = `<div class="log-sys">=== SERVER LOGS ===</div>`;
+      data.logs.split('\n').forEach(line => {
+        if(line.trim() !== '') logToConsole(line, 'log-sys');
+      });
+    }
+  } catch(e) { }
+}
+
+/* ================= TABS ================= */
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+  if(tab === 'console') {
+    document.querySelectorAll('.tab')[0].classList.add('active');
+    document.getElementById('content-console').classList.add('active');
+  } else {
+    document.querySelectorAll('.tab')[1].classList.add('active');
+    document.getElementById('content-files').classList.add('active');
+  }
+}
+
+/* ================= WEBSOCKET CONSOLE ================= */
+function initWebSocket() {
+  socket = io(API_BASE, { query: { userId: currentUser }, transports: ['websocket', 'polling'] });
+  socket.on('console-log', (data) => { 
+    logToConsole(data.text, data.type);
+    if(data.text.includes('[EXIT]')) {
+      document.getElementById('scStatus').textContent = 'Offline';
+      document.getElementById('scStatus').style.color = 'var(--red)';
+      updatePowerButtons();
+    }
+  });
+}
+function logToConsole(text, cls='log-info') {
+  const box = document.getElementById('consoleBox');
+  const div = document.createElement('div');
+  div.className = cls; div.textContent = text;
+  box.appendChild(div); box.scrollTop = box.scrollHeight;
+}
+function sendCmd() {
+  const input = document.getElementById('cmdInput');
+  const cmd = input.value.trim();
+  if(!cmd || !socket) return;
+  logToConsole('> ' + cmd, 'log-done');
+  socket.emit('send-command', cmd);
+  input.value = '';
+}
+
+/* ================= LOAD FILES ================= */
+async function loadFiles() {
+  try {
+    const res = await fetch(`${API_BASE}/api/files?userId=${currentUser}&path=${encodeURIComponent(currentPath)}`);
+    const data = await res.json();
+    renderFiles(data.files);
+    renderBreadcrumb();
+  } catch (e) { console.error(e); }
+}
+
+function renderBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  const parts = currentPath.split('/').filter(Boolean);
+  let html = `<span onclick="navigateTo('')"><i class="fa-solid fa-home"></i> / home</span>`;
+  let tempPath = '';
+  parts.forEach(p => {
+    tempPath += (tempPath ? '/' : '') + p;
+    html += ` <i class="fa-solid fa-chevron-right"></i> <span onclick="navigateTo('${tempPath}')">${p}</span>`;
+  });
+  bc.innerHTML = html;
+}
+
+function navigateTo(path) { 
+  currentPath = path; 
+  // ✅ Setiap masuk folder, set folder aktif buat di-run
+  activeFolderSC = path; 
+  document.getElementById('scName').textContent = path || 'Root';
+  loadFiles(); 
+}
+
+/* ================= RENDER FILE LIST ================= */
+function renderFiles(files){
+  const container = document.getElementById('fileListContainer');
+  container.innerHTML = '';
+  
+  if (currentPath) {
+    let parentPath = currentPath.split('/').slice(0, -1).join('/');
+    container.innerHTML += `
+      <div class="file-item" onclick="navigateTo('${parentPath}')">
+        <div class="file-info">
+          <i class="fa-solid fa-folder folder-icon file-icon"></i>
+          <div class="file-name">..</div>
+        </div>
+      </div>`;
+  }
+
+  if(files.length === 0 && !currentPath) {
+    container.innerHTML += `<div style="text-align:center;color:#777;padding:20px;">Folder kosong.</div>`;
+    return;
+  }
+
+  files.forEach(f=>{
+    const isFolder = f.type === 'folder';
+    const iconClass = isFolder ? 'fa-folder folder-icon' : 'fa-file-code file-icon';
+    
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    
+    div.onclick = (e) => {
+      if(e.target.closest('.dropdown')) return;
+      if(isFolder) {
+        navigateTo(currentPath ? `${currentPath}/${f.name}` : f.name);
+      } else {
+        openFile(f.name);
+      }
+    };
+
+    // ✅ FITUR UNARCHIVE MUNCUL DI SINI
+    div.innerHTML = `
+      <div class="file-info">
+        <i class="fa-solid ${iconClass} file-icon"></i>
+        <div>
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${f.size || '—'} • ${f.modified || '—'}</div>
+        </div>
+      </div>
+      <div class="file-action">
+        <div class="dropdown">
+          <button class="dropdown-btn" onclick="toggleDropdown(this)"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+          <div class="dropdown-content">
+            <a onclick="openModal('rename', '${f.name}')"><i class="fa-solid fa-pen"></i> Rename</a>
+            <a onclick="openModal('move', '${f.name}')"><i class="fa-solid fa-arrow-right"></i> Move</a>
+            
+            ${f.name.endsWith('.zip') ? `<a onclick="unarchive('${f.name}')"><i class="fa-solid fa-box-open"></i> Unarchive (Extract)</a>` : ''}
+            
+            <a onclick="deleteItem('${f.name}')" class="danger"><i class="fa-solid fa-trash"></i> Delete</a>
+          </div>
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function toggleDropdown(btn) {
+  const dropdown = btn.parentElement;
+  document.querySelectorAll('.dropdown').forEach(d => {
+    if(d !== dropdown) d.classList.remove('show');
+  });
+  dropdown.classList.toggle('show');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.dropdown')) {
+    document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
+  }
+});
+
+/* ================= POWER BAR LOGIC ================= */
+function updatePowerButtons() {
+  const btnStart = document.getElementById('btnStart');
+  const btnRestart = document.getElementById('btnRestart');
+  const btnStop = document.getElementById('btnStop');
+  
+  const isRunning = document.getElementById('scStatus').textContent === 'Online';
+  btnStart.disabled = isRunning;
+  btnRestart.disabled = !isRunning;
+  btnStop.disabled = !isRunning;
+}
+
+// ✅ FUNGSI START (Otomatis panggil folder yang lagi dibuka)
+async function startActiveSC() {
+  if(!activeFolderSC && activeFolderSC !== '') { showAlert('Buka folder SC dulu di tab Files!', 'Peringatan', true); return; }
+  
+  switchTab('console');
+  document.getElementById('scStatus').textContent = 'Starting...';
+  document.getElementById('scStatus').style.color = 'var(--yellow)';
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/run-sc`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ userId: currentUser, folder: activeFolderSC }) // Kirim folder aja, file biar backend yg cari
+    });
+    const data = await res.json();
+    
+    if(data.success) {
+      document.getElementById('scStatus').textContent = 'Online';
+      document.getElementById('scStatus').style.color = 'var(--green)';
+      document.getElementById('scName').textContent = data.file; // Tampilin nama file yg otomatis dideteksi
+    } else {
+      showAlert('Gagal Run: ' + data.message, 'Error', true);
+      document.getElementById('scStatus').textContent = 'Offline';
+      document.getElementById('scStatus').style.color = 'var(--red)';
+    }
+    updatePowerButtons();
+  } catch(e) { 
+    showAlert('Gagal konek ke server.', 'Error', true); 
+    document.getElementById('scStatus').textContent = 'Offline';
+    document.getElementById('scStatus').style.color = 'var(--red)';
+    updatePowerButtons();
+  }
+}
+
+async function stopSC() {
+  if(activeFolderSC === null) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/stop-sc`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ userId: currentUser, folder: activeFolderSC })
+    });
+    const data = await res.json();
+    if(data.success) {
+      document.getElementById('scStatus').textContent = 'Offline';
+      document.getElementById('scStatus').style.color = 'var(--red)';
+      updatePowerButtons();
+    } else showAlert('Gagal Stop: ' + data.message, 'Error', true);
+  } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+}
+
+function restartSC() {
+  if(activeFolderSC === null) return;
+  stopSC().then(() => {
+    setTimeout(() => { startActiveSC(); }, 1000);
+  });
+}
+
+/* ================= FILE ACTIONS ================= */
+async function uploadFile() {
+  const fileInput = document.getElementById('fileUploader');
+  const file = fileInput.files[0];
+  if(!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('userId', currentUser);
+  formData.append('path', currentPath);
+  try {
+    const res = await fetch(`${API_BASE}/api/files/upload`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if(data.success) loadFiles(); 
+    else showAlert('Gagal Upload: ' + data.message, 'Error', true);
+  } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+  fileInput.value = ''; 
+}
+
+function openModal(action, filename) {
+  currentAction = action; selectedFile = filename;
+  const modal = document.getElementById('modalOverlay');
+  const input = document.getElementById('modalInput');
+  const title = document.getElementById('modalTitle');
+  if(action === 'rename') { title.textContent = 'Rename'; input.value = filename; }
+  else if (action === 'move') { title.textContent = 'Move ke (../)'; input.value = ''; }
+  else if (action === 'create-folder') { title.textContent = 'Nama Folder Baru'; input.value = ''; }
+  else if (action === 'create-file') { title.textContent = 'Nama File Baru'; input.value = ''; }
+  modal.style.display = 'flex';
+}
+function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+
+async function submitModal() {
+  const val = document.getElementById('modalInput').value.trim();
+  if(!val) return closeModal();
+
+  let endpoint = '', body = { userId: currentUser, currentPath, fileName: selectedFile };
+  if(currentAction === 'rename') { endpoint = '/api/files/rename'; body.oldName = selectedFile; body.newName = val; }
+  else if (currentAction === 'move') { endpoint = '/api/files/move'; body.destPath = val; }
+  else if (currentAction === 'create-folder') { endpoint = '/api/files/create-folder'; body.folderName = val; }
+  else if (currentAction === 'create-file') {
+    await fetch(`${API_BASE}/api/files/save`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ userId: currentUser, name: (currentPath ? currentPath+'/' : '') + val, content: '' })
+    });
+    closeModal(); loadFiles(); return;
+  }
+
+  try {
+    const res = await fetch(API_BASE + endpoint, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if(data.success) { closeModal(); loadFiles(); }
+    else showAlert('Gagal: ' + data.message, 'Error', true);
+  } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+}
+
+async function unarchive(filename) {
+  showConfirm(`Extract file ${filename}?`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/unarchive`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ userId: currentUser, currentPath, fileName: filename })
+      });
+      const data = await res.json();
+      if(data.success) loadFiles(); 
+      else showAlert('Gagal: ' + data.message, 'Error', true);
+    } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+  }, 'Extract ZIP');
+}
+
+async function deleteItem(filename) {
+  showConfirm(`Hapus ${filename} secara permanen?`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/delete`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ userId: currentUser, currentPath, fileName: filename })
+      });
+      const data = await res.json();
+      if(data.success) loadFiles(); 
+      else showAlert('Gagal: ' + data.message, 'Error', true);
+    } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+  }, 'Hapus File', true);
+}
+
+async function openFile(filename) {
+  try {
+    const res = await fetch(`${API_BASE}/api/files/read?userId=${currentUser}&name=${encodeURIComponent((currentPath ? currentPath+'/' : '') + filename)}`);
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('editorFilename').textContent = filename;
+      document.getElementById('fileEditor').value = data.content;
+      document.getElementById('editorOverlay').style.display = 'flex';
+      document.getElementById('editorOverlay').dataset.filename = (currentPath ? currentPath+'/' : '') + filename;
+    } else showAlert('Gagal baca file', 'Error', true);
+  } catch (e) { showAlert('Gagal konek.', 'Error', true); }
+}
+function closeEditor() { document.getElementById('editorOverlay').style.display = 'none'; }
+
+async function saveFile(){
+  const relPath = document.getElementById('editorOverlay').dataset.filename;
+  const content = document.getElementById('fileEditor').value;
+  if(!relPath) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/files/save`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ userId: currentUser, name: relPath, content: content })
+    });
+    const data = await res.json();
+    if(data.success) showAlert('File disimpan!', 'Sukses'); 
+    else showAlert('Gagal simpan file', 'Error', true);
+  } catch(e) { showAlert('Gagal konek.', 'Error', true); }
+}
+</script>
+</body>
+</html>
